@@ -28,8 +28,11 @@
     <string>15.0</string>
     <key>LSRequiresIPhoneOS</key>
     <true/>
-    <key>UILaunchStoryboardName</key>
-    <string>LaunchScreen</string>
+  <key>UILaunchScreen</key>
+    <dict>
+        <key>UIBackgroundColor</key>
+        <string>f7f7fb</string>
+    </dict>
     <key>UIRequiredDeviceCapabilities</key>
     <array>
         <string>arm64</string>
