@@ -18,24 +18,40 @@ jobs:
           xcodebuild -version
           xcrun --sdk iphoneos --show-sdk-path
 
+      - name: 自动定位源文件
+        run: |
+          set -euo pipefail
+          find_src() { find . -name "$1" -not -path './.git/*' | head -n 1; }
+
+          SRC_APP="$(find_src AppDelegate.swift)"
+          SRC_PLIST="$(find_src Info.plist)"
+          SRC_SB="$(find_src LaunchScreen.storyboard)"
+          SRC_HTML="$(find_src index.html)"
+
+          for f in "$SRC_APP" "$SRC_PLIST" "$SRC_SB" "$SRC_HTML"; do
+            [ -n "$f" ] || { echo "::error::仓库里缺少必要文件"; exit 1; }
+          done
+
+          echo "SRC_APP=$SRC_APP"        >> "$GITHUB_ENV"
+          echo "SRC_PLIST=$SRC_PLIST"    >> "$GITHUB_ENV"
+          echo "SRC_SB=$SRC_SB"          >> "$GITHUB_ENV"
+          echo "SRC_HTML=$SRC_HTML"      >> "$GITHUB_ENV"
+          echo "WWW_DIR=$(dirname "$SRC_HTML")" >> "$GITHUB_ENV"
+
+          echo "已定位："; echo "$SRC_APP"; echo "$SRC_PLIST"; echo "$SRC_SB"; echo "$SRC_HTML"
+
       - name: 编译 iOS 原生 Mach-O 二进制文件
         run: |
           set -euo pipefail
           APP="build/Payload/FirstLight.app"
-
           mkdir -p "$APP/www"
 
-          if [ ! -f index.html ]; then
-            echo "::error::仓库根目录缺少 index.html"
-            exit 1
-          fi
-          cp index.html "$APP/www/"
+          cp "$SRC_HTML" "$APP/www/"
           for d in assets src css js vendor images static; do
-            if [ -d "$d" ]; then cp -R "$d" "$APP/www/"; fi
+            [ -d "$WWW_DIR/$d" ] && cp -R "$WWW_DIR/$d" "$APP/www/"
           done
 
-          xcrun ibtool --compile "$APP/LaunchScreen.storyboardc" \
-            FirstLight-iOS/LaunchScreen.storyboard
+          xcrun ibtool --compile "$APP/LaunchScreen.storyboardc" "$SRC_SB"
 
           SDK="$(xcrun --sdk iphoneos --show-sdk-path)"
           xcrun -sdk iphoneos swiftc \
@@ -44,14 +60,14 @@ jobs:
             -swift-version 5 \
             -O \
             -F "$SDK/System/Library/Frameworks" \
-            FirstLight-iOS/AppDelegate.swift \
+            "$SRC_APP" \
             -o "$APP/FirstLight" \
             -framework UIKit \
             -framework WebKit \
             -framework Foundation
 
           chmod +x "$APP/FirstLight"
-          cp FirstLight-iOS/Info.plist "$APP/Info.plist"
+          cp "$SRC_PLIST" "$APP/Info.plist"
 
           file "$APP/FirstLight"
           lipo -info "$APP/FirstLight"
