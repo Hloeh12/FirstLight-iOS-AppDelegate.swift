@@ -13,34 +13,44 @@ jobs:
       - name: 检出源码
         uses: actions/checkout@v5
 
-      - name: 环境自检
+      - name: 诊断 仓库结构
+        run: |
+          echo "=== 根目录 ==="
+          ls -la
+          echo "=== 全部文件 ==="
+          find . -not -path './.git/*' -type f | head -n 60
+
+      - name: 诊断 工具链
         run: |
           xcodebuild -version
+          echo "=== Xcode 应用 ==="
+          ls -d /Applications/Xcode*.app
+          echo "=== SDK ==="
           xcrun --sdk iphoneos --show-sdk-path
 
       - name: 自动定位源文件
         run: |
           set -euo pipefail
-          find_src() { find . -name "$1" -not -path './.git/*' | head -n 1; }
-
+          find_src() { find . -name "$1" -not -path './.git/*' -type f | head -n 1; }
           SRC_APP="$(find_src AppDelegate.swift)"
           SRC_PLIST="$(find_src Info.plist)"
           SRC_HTML="$(find_src index.html)"
-
-          for f in "$SRC_APP" "$SRC_PLIST" "$SRC_HTML"; do
-            [ -n "$f" ] || { echo "::error::仓库里缺少必要文件"; exit 1; }
-          done
-
-          echo "SRC_APP=$SRC_APP"     >> "$GITHUB_ENV"
+          echo "SRC_APP=[$SRC_APP]"
+          echo "SRC_PLIST=[$SRC_PLIST]"
+          echo "SRC_HTML=[$SRC_HTML]"
+          if [ -z "$SRC_APP" ] || [ -z "$SRC_PLIST" ] || [ -z "$SRC_HTML" ]; then
+            echo "FATAL: 缺少必要源文件"
+            exit 1
+          fi
+          echo "SRC_APP=$SRC_APP" >> "$GITHUB_ENV"
           echo "SRC_PLIST=$SRC_PLIST" >> "$GITHUB_ENV"
-          echo "SRC_HTML=$SRC_HTML"   >> "$GITHUB_ENV"
+          echo "SRC_HTML=$SRC_HTML" >> "$GITHUB_ENV"
           echo "WWW_DIR=$(dirname "$SRC_HTML")" >> "$GITHUB_ENV"
-
-          echo "已定位："; echo "$SRC_APP"; echo "$SRC_PLIST"; echo "$SRC_HTML"
 
       - name: 编译 iOS 原生 Mach-O 二进制文件
         run: |
           set -euo pipefail
+          set -x
           APP="build/Payload/FirstLight.app"
           mkdir -p "$APP/www"
 
@@ -50,7 +60,7 @@ jobs:
           done
 
           SDK="$(xcrun --sdk iphoneos --show-sdk-path)"
-          echo "SDK: $SDK"
+          echo "SDK=$SDK"
 
           xcrun -sdk iphoneos swiftc \
             -sdk "$SDK" \
@@ -63,21 +73,40 @@ jobs:
 
           chmod +x "$APP/FirstLight"
           cp "$SRC_PLIST" "$APP/Info.plist"
+          set +x
 
+          echo "=== 产物检查 ==="
+          ls -la "$APP"
+          du -sh "$APP"
           file "$APP/FirstLight"
           lipo -info "$APP/FirstLight"
 
       - name: 伪签名与封装标准 IPA
         run: |
           set -euo pipefail
+          set -x
           cd build
           codesign -s - --force --deep --timestamp=none Payload/FirstLight.app
           zip -qr FirstLight.ipa Payload -x '*.DS_Store'
           mv FirstLight.ipa ../
+          set +x
+          echo "=== IPA 检查 ==="
+          ls -la ../FirstLight.ipa
+          unzip -l ../FirstLight.ipa
 
       - name: 上传构建产物 (IPA)
         uses: actions/upload-artifact@v4
         with:
           name: FirstLight-IPA
           path: FirstLight.ipa
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: 上传诊断目录
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-debug
+          path: build
+          if-no-files-found: warn
           retention-days: 7
