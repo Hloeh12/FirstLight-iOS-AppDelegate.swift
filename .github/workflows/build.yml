@@ -25,24 +25,20 @@ jobs:
 
           SRC_APP="$(find_src AppDelegate.swift)"
           SRC_PLIST="$(find_src Info.plist)"
-          SRC_SB="$(find_src LaunchScreen.storyboard)"
           SRC_HTML="$(find_src index.html)"
 
-          for f in "$SRC_APP" "$SRC_PLIST" "$SRC_SB" "$SRC_HTML"; do
+          for f in "$SRC_APP" "$SRC_PLIST" "$SRC_HTML"; do
             [ -n "$f" ] || { echo "::error::仓库里缺少必要文件"; exit 1; }
           done
 
           echo "SRC_APP=$SRC_APP"     >> "$GITHUB_ENV"
           echo "SRC_PLIST=$SRC_PLIST" >> "$GITHUB_ENV"
-          echo "SRC_SB=$SRC_SB"       >> "$GITHUB_ENV"
           echo "SRC_HTML=$SRC_HTML"   >> "$GITHUB_ENV"
           echo "WWW_DIR=$(dirname "$SRC_HTML")" >> "$GITHUB_ENV"
 
-          echo "已定位："; echo "$SRC_APP"; echo "$SRC_PLIST"; echo "$SRC_SB"; echo "$SRC_HTML"
+          echo "已定位："; echo "$SRC_APP"; echo "$SRC_PLIST"; echo "$SRC_HTML"
 
       - name: 编译 iOS 原生 Mach-O 二进制文件
-        run: |
-         - name: 编译 iOS 原生 Mach-O 二进制文件
         run: |
           set -euo pipefail
           APP="build/Payload/FirstLight.app"
@@ -70,4 +66,18 @@ jobs:
 
           file "$APP/FirstLight"
           lipo -info "$APP/FirstLight"
-          otool -l "$APP/FirstLight" | grep -A2 LC_MIN_IPHONEOS || true
+
+      - name: 伪签名与封装标准 IPA
+        run: |
+          set -euo pipefail
+          cd build
+          codesign -s - --force --deep --timestamp=none Payload/FirstLight.app
+          zip -qr FirstLight.ipa Payload -x '*.DS_Store'
+          mv FirstLight.ipa ../
+
+      - name: 上传构建产物 (IPA)
+        uses: actions/upload-artifact@v4
+        with:
+          name: FirstLight-IPA
+          path: FirstLight.ipa
+          retention-days: 7
